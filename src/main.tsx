@@ -8,3 +8,13 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     {window.location.pathname === "/admin" || window.location.hash === "#/admin" ? <AdminPanel /> : <App />}
   </React.StrictMode>,
 );
+
+window.addEventListener("load", () => {
+  window.setTimeout(() => {
+    document.getElementById("app-loader")?.classList.add("loaded");
+  }, 700);
+});
+
+window.setTimeout(() => {
+  document.getElementById("app-loader")?.classList.add("loaded");
+}, 2400);

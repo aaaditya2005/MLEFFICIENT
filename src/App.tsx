@@ -350,7 +350,6 @@ function App() {
               </article>
             ))}
           </div>
-          <p className="upcoming">🚀 <b>ML Efficient {config.edition}</b> brings together {config.participantCount} participants for a three-day journey through AI learning, project building, and a final-day hackathon.</p>
         </section>
 
         <section className="section reveal timeline-section" id="timeline">
