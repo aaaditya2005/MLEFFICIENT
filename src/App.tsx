@@ -6,7 +6,6 @@ import {
 } from "lucide-react";
 
 const SITE_CONFIG_KEY = "ml-efficient-site-config";
-const ADMIN_SESSION_KEY = "ml-efficient-admin-session";
 
 
 const defaultSchedule = [
@@ -237,10 +236,28 @@ function loadConfig(): SiteConfig {
   }
 }
 
+function mergeConfig(parsed: Partial<SiteConfig>): SiteConfig {
+  return {
+    ...defaultConfig,
+    ...parsed,
+    topics: parsed.topics?.length ? parsed.topics : defaultConfig.topics,
+    aboutFeatures: parsed.aboutFeatures?.length ? parsed.aboutFeatures : defaultConfig.aboutFeatures,
+    pastEvents: parsed.pastEvents?.length ? parsed.pastEvents : defaultConfig.pastEvents,
+    schedule: parsed.schedule?.length ? parsed.schedule : defaultConfig.schedule,
+  };
+}
+
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [config, setConfig] = useState<SiteConfig>(loadConfig);
   const now = Date.now();
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then((response) => response.ok ? response.json() : {})
+      .then((saved) => setConfig(mergeConfig(saved)))
+      .catch(() => undefined);
+  }, []);
   const registrationStart = new Date(config.registrationStart);
   const registrationEnd = new Date(config.registrationEnd);
   const eventStart = new Date(config.eventStart);
@@ -426,25 +443,55 @@ function App() {
 }
 
 export function AdminPanel() {
-  const [authenticated, setAuthenticated] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) === "authenticated");
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [config, setConfig] = useState<SiteConfig>(loadConfig);
   const [saved, setSaved] = useState(false);
 
-  const login = (event: React.FormEvent) => {
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((response) => {
+        setAuthenticated(response.ok);
+        return response.ok ? fetch("/api/config") : null;
+      })
+      .then((response) => response?.ok ? response.json() : {})
+      .then((savedConfig) => {
+        if (savedConfig && Object.keys(savedConfig).length) setConfig(mergeConfig(savedConfig));
+      })
+      .finally(() => setCheckingSession(false));
+  }, []);
+
+  const login = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (username.trim() === "admin" && password === "MLEfficient@3.0") {
-      sessionStorage.setItem(ADMIN_SESSION_KEY, "authenticated");
-      setAuthenticated(true);
-      setLoginError("");
-    } else {
-      setLoginError("Incorrect admin credentials.");
+    setLoginError("");
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username.trim(), password }),
+    });
+    if (!response.ok) {
+      setLoginError(response.status === 429 ? "Too many attempts. Try again later." : "Incorrect admin credentials.");
+      return;
+    }
+    setAuthenticated(true);
+    setPassword("");
+    const configResponse = await fetch("/api/config");
+    if (configResponse.ok) {
+      const savedConfig = await configResponse.json() as Partial<SiteConfig>;
+      if (Object.keys(savedConfig).length) setConfig(mergeConfig(savedConfig));
     }
   };
 
-  const save = () => {
+  const save = async () => {
+    const response = await fetch("/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!response.ok) return;
     localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(config));
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
@@ -462,6 +509,8 @@ export function AdminPanel() {
     };
     reader.readAsDataURL(file);
   };
+
+  if (checkingSession) return <main className="admin-page admin-login-page"><p>Checking session...</p></main>;
 
   if (!authenticated) {
     return (
@@ -483,7 +532,7 @@ export function AdminPanel() {
       <header className="admin-header">
         <div><span>ML Efficient CMS</span><h1>Event Content Manager</h1></div>
         <div className="admin-actions">
-          <button onClick={() => { sessionStorage.removeItem(ADMIN_SESSION_KEY); setAuthenticated(false); }}>Logout</button>
+          <button onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); setAuthenticated(false); }}>Logout</button>
           <button className="admin-save" onClick={save}>{saved ? "Saved" : "Save changes"}</button>
         </div>
       </header>
